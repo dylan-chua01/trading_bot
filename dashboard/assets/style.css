@@ -1,0 +1,193 @@
+:root {
+  --bg: #f3f8fc;
+  --grid: rgba(30, 58, 95, 0.07);
+  --panel: #ffffff;
+  --teal: #0f766e;
+  --navy: #1e3a5f;
+  --bronze: #a16207;
+  --amber: #f59e0b;
+  --text: #000000;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; }
+
+body {
+  background-color: var(--bg);
+  background-image:
+    linear-gradient(var(--grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size: 24px 24px;
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+/* ---------- panels ---------- */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--teal);
+  border-radius: 6px;
+  padding: 24px 28px 28px;
+}
+
+.panel > h2 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 650;
+  color: var(--text);
+}
+
+.panel > .sub {
+  margin: 4px 0 0;
+  font-size: 15px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.panel > .chart,
+.panel > table {
+  margin-top: 18px;
+}
+
+/* ---------- tables ---------- */
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+th, td {
+  text-align: left;
+  vertical-align: top;
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(15, 118, 110, 0.22);
+}
+
+thead th {
+  color: var(--navy);
+  font-weight: 650;
+  border-bottom: 1px solid var(--teal);
+}
+
+tbody th {
+  font-weight: 650;
+  color: var(--navy);
+  white-space: nowrap;
+  width: 1%;
+  padding-right: 22px;
+}
+
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+tr:last-child > th, tr:last-child > td { border-bottom: 0; }
+
+/* ---------- charts ---------- */
+
+.chart { position: relative; width: 100%; }
+.chart svg { display: block; width: 100%; height: auto; }
+.chart .axis text { font-size: 13px; fill: #000; }
+.chart .gridline { stroke: rgba(30, 58, 95, 0.12); stroke-width: 1; }
+.chart .baseline { stroke: #000; stroke-width: 1; }
+.chart .guide { stroke: var(--navy); stroke-width: 1; stroke-dasharray: 4 3; }
+
+.chart .legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.chart .legend i {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border-radius: 2px;
+  margin-right: 6px;
+  vertical-align: -1px;
+}
+
+.chart .tip {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  background: #fff;
+  border: 1px solid var(--teal);
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(30, 58, 95, 0.15);
+  display: none;
+  z-index: 2;
+}
+.chart .tip b { display: block; margin-bottom: 2px; }
+.chart .tip i {
+  display: inline-block;
+  width: 9px; height: 9px;
+  border-radius: 2px;
+  margin-right: 6px;
+}
+.chart .tip span { float: right; margin-left: 16px; font-variant-numeric: tabular-nums; }
+
+/* ---------- presenter tools ---------- */
+
+#ring {
+  position: fixed;
+  left: 0; top: 0;
+  width: 36px; height: 36px;
+  margin: -18px 0 0 -18px;
+  border: 3px solid var(--amber);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 1000;
+  opacity: 0;
+}
+
+#ink {
+  position: fixed;
+  inset: 0;
+  width: 100vw; height: 100vh;
+  pointer-events: none;
+  z-index: 999;
+}
+
+body.inking { user-select: none; -webkit-user-select: none; cursor: crosshair; }
+
+body.presenting { overflow: hidden; }
+body.presenting main { max-width: none; padding: 0; display: block; }
+body.presenting .panel { display: none; }
+body.presenting .panel.current {
+  display: block;
+  position: fixed;
+  left: 0; top: 0;
+  transform-origin: 0 0;
+}
+
+#counter {
+  position: fixed;
+  left: 14px; bottom: 10px;
+  font-size: 13px;
+  color: var(--navy);
+  display: none;
+  z-index: 998;
+}
+body.presenting #counter { display: block; }
+
+@media print {
+  #ring, #ink, #counter { display: none; }
+}

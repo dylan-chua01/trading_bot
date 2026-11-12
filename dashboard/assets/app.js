@@ -1,0 +1,389 @@
+(function () {
+  "use strict";
+
+  var COLORS = ["#0f766e", "#1e3a5f", "#a16207", "#64748b", "#0e7490", "#7c2d12"];
+  var AMBER = "#f59e0b";
+  var NS = "http://www.w3.org/2000/svg";
+
+  // ---------- today's date ----------
+  document.querySelectorAll("[data-today]").forEach(function (el) {
+    el.textContent = new Date().toLocaleDateString("en-US", {
+      weekday: "long", year: "numeric", month: "long", day: "numeric"
+    });
+  });
+
+  // ---------- charts ----------
+  // A div with class "chart" holding its spec as JSON (see build.py).
+  // spec: { type: "line" | "bar", x: [labels], series: [{name, values, color}],
+  //         format: "percent" | "dollar" | "number", decimals: 1 }
+
+  function svg(tag, attrs, parent) {
+    var el = document.createElementNS(NS, tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(el);
+    return el;
+  }
+
+  function formatter(spec) {
+    var d = spec.decimals;
+    return function (v) {
+      if (v === null || v === undefined || isNaN(v)) return "–";
+      if (spec.format === "percent") return v.toFixed(d === undefined ? 1 : d) + "%";
+      var s = v.toLocaleString("en-US", {
+        minimumFractionDigits: d === undefined ? 0 : d,
+        maximumFractionDigits: d === undefined ? 2 : d
+      });
+      return spec.format === "dollar" ? (v < 0 ? "-$" + s.slice(1) : "$" + s) : s;
+    };
+  }
+
+  function niceTicks(lo, hi, n) {
+    if (lo === hi) { lo -= 1; hi += 1; }
+    var raw = (hi - lo) / n;
+    var mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    var step = [1, 2, 2.5, 5, 10].map(function (m) { return m * mag; })
+      .filter(function (s) { return s >= raw; })[0];
+    var start = Math.floor(lo / step) * step;
+    var ticks = [];
+    for (var v = start; v < hi + step * 0.999; v += step) ticks.push(+v.toPrecision(12));
+    return ticks;
+  }
+
+  var CHART_H = 440;
+
+  function drawChart(host, height) {
+    var src = host.querySelector('script[type="application/json"]');
+    if (!src) return;
+    Array.prototype.slice.call(host.children).forEach(function (c) {
+      if (c !== src) host.removeChild(c);
+    });
+    var spec;
+    try { spec = JSON.parse(src.textContent); }
+    catch (e) { host.textContent = "Chart data could not be read."; return; }
+
+    var fmt = formatter(spec);
+    var isBar = spec.type === "bar";
+    var xs = spec.x || [];
+    var series = (spec.series || []).map(function (s, i) {
+      return { name: s.name, values: s.values, color: s.color || COLORS[i % COLORS.length] };
+    });
+    var n = xs.length;
+
+    if (series.length > 1) {
+      var legend = document.createElement("div");
+      legend.className = "legend";
+      series.forEach(function (s) {
+        var item = document.createElement("span");
+        var sw = document.createElement("i");
+        sw.style.background = s.color;
+        item.appendChild(sw);
+        item.appendChild(document.createTextNode(s.name));
+        legend.appendChild(item);
+      });
+      host.appendChild(legend);
+    }
+
+    var W = 1000, H = height || CHART_H, m = { l: 74, r: 18, t: 12, b: 34 };
+    var pw = W - m.l - m.r, ph = H - m.t - m.b;
+    var root = svg("svg", { viewBox: "0 0 " + W + " " + H, role: "img" }, host);
+
+    var all = [];
+    series.forEach(function (s) {
+      s.values.forEach(function (v) { if (v !== null && !isNaN(v)) all.push(v); });
+    });
+    var lo = Math.min.apply(null, all), hi = Math.max.apply(null, all);
+    if (isBar) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+    var ticks = niceTicks(lo, hi, 5);
+    lo = ticks[0]; hi = ticks[ticks.length - 1];
+
+    function y(v) { return m.t + ph - ((v - lo) / (hi - lo)) * ph; }
+    var band = pw / Math.max(n, 1);
+    function x(i) { return isBar ? m.l + band * (i + 0.5) : m.l + (n > 1 ? (pw * i) / (n - 1) : pw / 2); }
+
+    var axis = svg("g", { "class": "axis" }, root);
+    ticks.forEach(function (t) {
+      svg("line", { "class": "gridline", x1: m.l, x2: W - m.r, y1: y(t), y2: y(t) }, axis);
+      svg("text", { x: m.l - 10, y: y(t) + 4, "text-anchor": "end" }, axis).textContent = fmt(t);
+    });
+    var labelCount = Math.min(n, isBar ? 14 : 8);
+    for (var k = 0; k < labelCount; k++) {
+      var i = labelCount === 1 ? 0 : Math.round((k * (n - 1)) / (labelCount - 1));
+      var anchor = isBar ? "middle" : k === 0 ? "start" : k === labelCount - 1 ? "end" : "middle";
+      svg("text", { x: x(i), y: H - 10, "text-anchor": anchor }, axis).textContent = xs[i];
+    }
+    if (lo <= 0 && hi >= 0) {
+      svg("line", { "class": "baseline", x1: m.l, x2: W - m.r, y1: y(0), y2: y(0) }, root);
+    }
+
+    var guide = svg("line", { "class": "guide", y1: m.t, y2: m.t + ph, visibility: "hidden" }, root);
+
+    if (isBar) {
+      var groupW = band * 0.72, barW = groupW / series.length;
+      series.forEach(function (s, si) {
+        s.values.forEach(function (v, i) {
+          if (v === null || isNaN(v)) return;
+          svg("rect", {
+            x: x(i) - groupW / 2 + si * barW, width: Math.max(barW - 1, 1),
+            y: Math.min(y(v), y(0)), height: Math.abs(y(v) - y(0)), fill: s.color
+          }, root);
+        });
+      });
+    } else {
+      series.forEach(function (s) {
+        var d = "", pen = false;
+        s.values.forEach(function (v, i) {
+          if (v === null || isNaN(v)) { pen = false; return; }
+          d += (pen ? "L" : "M") + x(i).toFixed(1) + " " + y(v).toFixed(1);
+          pen = true;
+        });
+        svg("path", { d: d, fill: "none", stroke: s.color, "stroke-width": 2.5,
+                      "stroke-linejoin": "round", "stroke-linecap": "round" }, root);
+      });
+    }
+
+    var dots = series.map(function (s) {
+      return isBar ? null : svg("circle", { r: 5, fill: s.color, stroke: "#fff",
+                                            "stroke-width": 2, visibility: "hidden" }, root);
+    });
+
+    var tip = document.createElement("div");
+    tip.className = "tip";
+    host.appendChild(tip);
+
+    function hide() {
+      tip.style.display = "none";
+      guide.setAttribute("visibility", "hidden");
+      dots.forEach(function (d) { if (d) d.setAttribute("visibility", "hidden"); });
+    }
+
+    root.addEventListener("mousemove", function (e) {
+      if (!n) return;
+      var r = root.getBoundingClientRect();
+      var px = ((e.clientX - r.left) / r.width) * W;
+      var i = isBar ? Math.floor((px - m.l) / band) : Math.round(((px - m.l) / pw) * (n - 1));
+      i = Math.max(0, Math.min(n - 1, i));
+
+      guide.setAttribute("x1", x(i)); guide.setAttribute("x2", x(i));
+      guide.setAttribute("visibility", isBar ? "hidden" : "visible");
+      tip.textContent = "";
+      var head = document.createElement("b");
+      head.textContent = xs[i];
+      tip.appendChild(head);
+      series.forEach(function (s, si) {
+        var v = s.values[i];
+        if (dots[si]) {
+          if (v === null || isNaN(v)) dots[si].setAttribute("visibility", "hidden");
+          else {
+            dots[si].setAttribute("cx", x(i)); dots[si].setAttribute("cy", y(v));
+            dots[si].setAttribute("visibility", "visible");
+          }
+        }
+        var row = document.createElement("div");
+        var sw = document.createElement("i");
+        sw.style.background = s.color;
+        var val = document.createElement("span");
+        val.textContent = fmt(v);
+        row.appendChild(sw);
+        row.appendChild(document.createTextNode(s.name));
+        row.appendChild(val);
+        tip.appendChild(row);
+      });
+
+      // Position in the chart's own (unscaled) pixels so it works in presenter mode.
+      tip.style.display = "block";
+      var hr = host.getBoundingClientRect();
+      var scale = hr.width / host.offsetWidth || 1;
+      var left = (e.clientX - hr.left) / scale + 16;
+      var top = (e.clientY - hr.top) / scale - tip.offsetHeight - 10;
+      if (left + tip.offsetWidth > host.offsetWidth) left -= tip.offsetWidth + 32;
+      tip.style.left = Math.max(0, left) + "px";
+      tip.style.top = Math.max(0, top) + "px";
+    });
+    root.addEventListener("mouseleave", hide);
+  }
+
+  document.querySelectorAll(".chart").forEach(function (h) { drawChart(h); });
+
+  // ---------- amber ring ----------
+  var ring = document.createElement("div");
+  ring.id = "ring";
+  document.body.appendChild(ring);
+  document.addEventListener("mousemove", function (e) {
+    ring.style.opacity = 1;
+    ring.style.transform = "translate(" + e.clientX + "px," + e.clientY + "px)";
+  });
+  document.documentElement.addEventListener("mouseleave", function () { ring.style.opacity = 0; });
+
+  // ---------- highlighter: shift + drag ----------
+  var HOLD = 1400, FADE = 600; // gone about 2 seconds after release
+  var ink = document.createElement("canvas");
+  ink.id = "ink";
+  document.body.appendChild(ink);
+  var ctx = ink.getContext("2d");
+  var strokes = [], drawing = null, ticking = false;
+
+  function sizeInk() {
+    var dpr = window.devicePixelRatio || 1;
+    ink.width = window.innerWidth * dpr;
+    ink.height = window.innerHeight * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    paint();
+  }
+
+  function paint() {
+    var now = performance.now();
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    strokes = strokes.filter(function (s) { return !s.released || now - s.released < HOLD + FADE; });
+    strokes.forEach(function (s) {
+      var age = s.released ? now - s.released : 0;
+      var alpha = age <= HOLD ? 1 : 1 - (age - HOLD) / FADE;
+      ctx.globalAlpha = 0.55 * alpha;
+      ctx.strokeStyle = AMBER;
+      ctx.lineWidth = 14;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      s.pts.forEach(function (p, i) { if (i) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); });
+      if (s.pts.length === 1) ctx.lineTo(s.pts[0][0] + 0.1, s.pts[0][1]);
+      ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+    if (strokes.length) requestAnimationFrame(paint); else ticking = false;
+  }
+
+  function kick() { if (!ticking) { ticking = true; requestAnimationFrame(paint); } }
+
+  function setShift(e) { document.body.classList.toggle("inking", e.shiftKey); }
+  document.addEventListener("keydown", setShift);
+  document.addEventListener("keyup", setShift);
+  document.addEventListener("selectstart", function (e) {
+    if (drawing || e.shiftKey) e.preventDefault();
+  });
+
+  document.addEventListener("mousedown", function (e) {
+    if (!e.shiftKey || e.button !== 0) return;
+    e.preventDefault(); // no text selection while highlighting
+    document.body.classList.add("inking");
+    drawing = { pts: [[e.clientX, e.clientY]], released: 0 };
+    strokes.push(drawing);
+    kick();
+  });
+  document.addEventListener("mousemove", function (e) {
+    if (drawing) drawing.pts.push([e.clientX, e.clientY]);
+  });
+  function release() {
+    if (drawing) { drawing.released = performance.now(); drawing = null; }
+    document.body.classList.remove("inking");
+  }
+  document.addEventListener("mouseup", release);
+  window.addEventListener("blur", release);
+  window.addEventListener("resize", sizeInk);
+  sizeInk();
+
+  // ---------- presenter mode ----------
+  // P: one panel at a time, scaled to fill the screen, with the bottom-right
+  // corner (25% of the width, 30% of the height) left empty for the camera.
+  var CAM_W = 0.25, CAM_H = 0.30, PAD = 20, BASE_W = 1000;
+  var panels = Array.prototype.slice.call(document.querySelectorAll(".panel"));
+  var current = -1;
+  var counter = document.createElement("div");
+  counter.id = "counter";
+  document.body.appendChild(counter);
+
+  function fit() {
+    if (current < 0) return;
+    var p = panels[current];
+    var chart = p.querySelector(".chart");
+    var vw = window.innerWidth, vh = window.innerHeight;
+    // The free space is an L shape. Try the full-width strip above the camera
+    // and the full-height column beside it, at a few panel widths, and keep
+    // whichever shows the panel biggest. A chart is redrawn taller or shorter
+    // so its panel matches the shape of the space.
+    var boxes = [
+      { w: vw - 2 * PAD, h: vh * (1 - CAM_H) - 2 * PAD },
+      { w: vw * (1 - CAM_W) - 2 * PAD, h: vh - 2 * PAD }
+    ];
+    function layout(width, box) {
+      p.style.transform = "none";
+      p.style.width = width + "px";
+      var H = CHART_H;
+      if (chart) {
+        drawChart(chart, H);
+        var pic = chart.querySelector("svg");
+        var other = p.offsetHeight - pic.clientHeight;
+        var want = (p.offsetWidth * box.h) / box.w - other;
+        H = Math.max(260, Math.min(1100, (want * 1000) / pic.clientWidth));
+        drawChart(chart, H);
+      }
+      var w = p.offsetWidth, h = p.offsetHeight;
+      var s = Math.min(box.w / w, box.h / h);
+      // Score by covered area times scale, so bigger text wins close calls.
+      return { score: w * h * s * s * s, s: s, w: w, h: h, width: width, box: box };
+    }
+    var best = null;
+    boxes.forEach(function (box) {
+      [0.7, 0.85, 1, 1.2, 1.45].forEach(function (f) {
+        var got = layout(BASE_W * f, box);
+        if (!best || got.score > best.score) best = got;
+      });
+    });
+    best = layout(best.width, best.box);
+    var left = PAD + (best.box.w - best.w * best.s) / 2;
+    var top = PAD + (best.box.h - best.h * best.s) / 2;
+    p.style.transform = "translate(" + left + "px," + top + "px) scale(" + best.s + ")";
+  }
+
+  function reset() {
+    panels.forEach(function (q) {
+      q.classList.remove("current"); q.style.transform = ""; q.style.width = "";
+    });
+    if (current >= 0) {
+      var chart = panels[current].querySelector(".chart");
+      if (chart) drawChart(chart);
+    }
+  }
+
+  function show(i) {
+    if (!panels.length) return;
+    reset();
+    current = (i + panels.length) % panels.length;
+    document.body.classList.add("presenting");
+    panels[current].classList.add("current");
+    counter.textContent = (current + 1) + " / " + panels.length;
+    fit();
+  }
+
+  function exit() {
+    if (current < 0) return;
+    var p = panels[current];
+    reset();
+    document.body.classList.remove("presenting");
+    current = -1;
+    p.scrollIntoView({ block: "start" });
+  }
+
+  function nearestPanel() {
+    var best = 0, dist = Infinity;
+    panels.forEach(function (p, i) {
+      var r = p.getBoundingClientRect();
+      var d = Math.abs(r.top + r.height / 2 - window.innerHeight / 2);
+      if (d < dist) { dist = d; best = i; }
+    });
+    return best;
+  }
+
+  document.addEventListener("keydown", function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var key = e.key;
+    if (key === "p" || key === "P") {
+      if (current < 0) show(nearestPanel()); else exit();
+    } else if (key === "Escape") {
+      exit();
+    } else if (current >= 0 && (key === "ArrowRight" || key === "ArrowDown")) {
+      e.preventDefault(); show(current + 1);
+    } else if (current >= 0 && (key === "ArrowLeft" || key === "ArrowUp")) {
+      e.preventDefault(); show(current - 1);
+    }
+  });
+  window.addEventListener("resize", fit);
+})();
